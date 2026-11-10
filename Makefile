@@ -6,7 +6,8 @@ CFLAGS = -O2 -std=c99 -Wall -Wextra
 CPPFLAGS =
 LDFLAGS =
 LDLIBS = -lm
-ALGORITHM ?= falcon-512
+# default algorithm
+ALGORITHM ?= falcon-512 
 
 PREFIX_falcon-512 := PQCLEAN_FALCON512_CLEAN_
 PREFIX_falcon-1024 := PQCLEAN_FALCON1024_CLEAN_

@@ -59,17 +59,25 @@ COMMON_NAMES += fips202
 endif
 COMMON_OBJECTS := $(addprefix $(BUILD_DIR)/common_,$(addsuffix .o,$(COMMON_NAMES)))
 TEST_OBJECT := $(BUILD_DIR)/test_main.o
-OBJECTS := $(ALGORITHM_OBJECTS) $(COMMON_OBJECTS) $(TEST_OBJECT)
+BENCH_OBJECT := $(BUILD_DIR)/benchmark_main.o
+OBJECTS := $(ALGORITHM_OBJECTS) $(COMMON_OBJECTS) $(TEST_OBJECT) $(BENCH_OBJECT)
 LIBRARY := $(BUILD_DIR)/lib$(ALGORITHM)_clean.a
 TARGET := $(BUILD_DIR)/signature_test$(EXEEXT)
+BENCH_TARGET := $(BUILD_DIR)/signature_benchmark$(EXEEXT)
+ITERATIONS ?= 100
+MESSAGE_BYTES ?= 32
+WARMUP ?= 3
 INCLUDES := -I$(ALGORITHM_DIR) -I$(COMMON_DIR) -Itests/common
 TEST_DEFINES := -DTEST_PREFIX=$(PREFIX_$(ALGORITHM))
 
-.PHONY: all lib test list test-all clean
+.PHONY: all lib test benchmark benchmark-build list test-all clean
 all: $(TARGET)
 lib: $(LIBRARY)
 test: $(TARGET)
 	./$(TARGET)
+benchmark-build: $(BENCH_TARGET)
+benchmark: $(BENCH_TARGET)
+	./$(BENCH_TARGET) $(ITERATIONS) $(MESSAGE_BYTES) $(WARMUP)
 list:
 	@echo $(SUPPORTED)
 
@@ -81,6 +89,9 @@ $(addprefix test-,$(SUPPORTED)):
 
 $(TARGET): $(TEST_OBJECT) $(LIBRARY) $(COMMON_OBJECTS)
 	$(CC) $(LDFLAGS) $(TEST_OBJECT) $(LIBRARY) $(COMMON_OBJECTS) $(LDLIBS) -o $@
+
+$(BENCH_TARGET): $(BENCH_OBJECT) $(LIBRARY) $(COMMON_OBJECTS)
+	$(CC) $(LDFLAGS) $(BENCH_OBJECT) $(LIBRARY) $(COMMON_OBJECTS) $(LDLIBS) -o $@
 
 # Applications supply SHAKE/SHA-2 and platform randomness separately.
 $(LIBRARY): $(ALGORITHM_OBJECTS)
@@ -99,14 +110,17 @@ $(BUILD_DIR)/algorithm_%.o: $(ALGORITHM_DIR)/%.c | $(BUILD_DIR)
 $(BUILD_DIR)/common_%.o: $(COMMON_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(INCLUDES) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(TEST_OBJECT): tests/signatures/main.c | $(BUILD_DIR)
+$(TEST_OBJECT): tests/host/signatures/main.c | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(INCLUDES) $(TEST_DEFINES) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(BENCH_OBJECT): tests/host/benchmark/main.c | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(INCLUDES) $(TEST_DEFINES) $(CFLAGS) -MMD -MP -c $< -o $@
 
 clean:
 ifeq ($(OS),Windows_NT)
-	-cmd /C del /Q $(subst /,\,$(OBJECTS) $(OBJECTS:.o=.d) $(LIBRARY) $(TARGET))
+	-cmd /C del /Q $(subst /,\,$(OBJECTS) $(OBJECTS:.o=.d) $(LIBRARY) $(TARGET) $(BENCH_TARGET))
 else
-	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(LIBRARY) $(TARGET)
+	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(LIBRARY) $(TARGET) $(BENCH_TARGET)
 endif
 
 -include $(OBJECTS:.o=.d)

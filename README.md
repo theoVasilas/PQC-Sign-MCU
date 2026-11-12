@@ -10,10 +10,11 @@ external/PQClean/
   crypto_sign/              19 portable clean implementations
   common/                   SHAKE, SHA-2, randomness, compatibility header
 tests/
-  signatures/main.c         Shared desktop correctness smoke tests
+  host/signatures/main.c    Shared desktop correctness smoke tests
+  host/benchmark/main.c     Windows host timing benchmark
   common/signature_api.h    Maps the selected PQClean API to the test runner
   common/helper.[ch]        Hex output helper for the original demo
-  falcon512/main.c          Original Falcon-512 demo (not the default runner)
+  host/falcon512/main.c     Original Falcon-512 demo (not the default runner)
 build/host/<algorithm>/     Generated objects, archive, and executable
 Makefile                    Selects one algorithm and its dependencies
 ```
@@ -82,6 +83,77 @@ The default flags are `-O2 -std=c99 -Wall -Wextra`. Compiler tools and flags can
 be overridden on the make command line. Clean the selected variant before
 changing its compiler or flags. Avoid running concurrent builds of the same
 variant into the same directory.
+
+## Windows 11 host benchmark
+
+The separate benchmark measures key generation, detached signing, and valid
+signature verification with Windows `QueryPerformanceCounter`. Microsoft
+documents this timer in [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps).
+It uses the same selected PQClean implementation and compiler flags as the tests.
+It currently requires Windows and MinGW-w64; the correctness tests remain portable.
+
+From PowerShell, with GCC and Make on PATH:
+
+```powershell
+mingw32-make benchmark ALGORITHM=falcon-512 ITERATIONS=100 MESSAGE_BYTES=32 WARMUP=3
+```
+
+Defaults are 100 measured iterations, a 32-byte message, and 3 warmup iterations.
+For slow SPHINCS+ variants, start with `ITERATIONS=3 WARMUP=1`.
+Each iteration generates a fresh key, signs the message, and verifies the resulting
+signature. Warmup performs the same operations but is excluded from results.
+All return codes and signature lengths are checked. A failure returns a nonzero
+exit status; no timing CSV is emitted for an incomplete run.
+
+For a clean CSV file, build first and use the executable's output-file argument:
+
+```powershell
+mingw32-make benchmark-build ALGORITHM=falcon-512
+.\build\host\falcon-512\signature_benchmark.exe 100 32 3 build/host/falcon-512/benchmark.csv
+```
+
+Arguments are `[iterations [message_bytes [warmup [output.csv]]]]`.
+Use `--help` for limits. Empty messages (`message_bytes=0`) and zero warmup are
+supported. Output directories must already exist; an existing output file is
+overwritten. Without a filename, CSV goes to stdout. Summaries and diagnostics go
+to stderr. Avoid redirecting `make benchmark` into CSV: Make also prints commands.
+An output-file argument avoids PowerShell-dependent redirection encodings.
+
+CSV contains one row per measured iteration: implementation namespace, iteration,
+message bytes, public/secret key bytes, signature capacity, actual signature bytes,
+and `keygen_us`, `sign_us`, `verify_us`. The stderr summary reports min, median,
+mean, and max in microseconds, plus compiler version, process bitness and QPC
+frequency. Actual Falcon signature sizes can vary; capacity is not actual length.
+No secret key contents are printed.
+
+Timing surrounds only each PQClean API call; memory allocation, result checks,
+statistics, and file/terminal output are outside the measured intervals. Samples
+are buffered and written after all measurements. Latencies include randomness
+obtained inside PQClean, timer overhead, and any Windows scheduling delays. Timer
+overhead is not subtracted. These are elapsed times, not CPU cycles. This runner
+measures latency and key/signature sizes; it does not measure peak RAM or MCU Flash.
+
+For comparisons, use the same message length, iteration/warmup counts, compiler,
+flags, CPU and Windows power settings. Record those settings, the date, and the
+project and PQClean commit IDs alongside the CSV. Close busy background programs
+and run without the debugger. Keep raw samples and repeat runs to assess variation;
+a small smoke run is not a final performance result. Clean the selected variant
+before changing compiler flags, since Make does not track flag changes.
+
+If Make reports `readdir .: Invalid argument` in a path containing Greek characters,
+use a Command Prompt and switch to the Windows short path before building:
+
+```bat
+set "PATH=C:\msys64\ucrt64\bin;%PATH%"
+for %I in (.) do @cd /d %~sI
+mingw32-make benchmark-build ALGORITHM=falcon-512
+```
+
+Run this from the project directory in an interactive Command Prompt (use `%%I`
+inside a batch file). This needs Windows short names enabled; otherwise use a
+checkout under an ASCII-only directory. If you previously built before the tests
+moved to `tests/host/`, run `mingw32-make clean ALGORITHM=falcon-512` once to remove
+dependency files referencing the old test path.
 
 ## Test coverage
 
